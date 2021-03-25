@@ -1,129 +1,359 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+import rospy
+import math
+from math import sqrt
 
-# C extensions
-*.so
+import csv
+from rosgraph_msgs.msg import Clock
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+import cv2 as cv
+import numpy as np
+from sensor_msgs.msg import Image
+from cv_bridge import CvBridge
+from pyzbar import pyzbar
+from sensor_msgs.msg import Range
+from geometry_msgs.msg import PoseStamped
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+from clover import srv
+from std_srvs.srv import Trigger
+from clover.srv import SetLEDEffect
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+import tf2_ros
+import tf2_geometry_msgs
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
 
-# Translations
-*.mo
-*.pot
+# coding: utf8
+#from PIL import Image
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
 
-# Flask stuff:
-instance/
-.webassets-cache
+import threading
 
-# Scrapy stuff:
-.scrapy
+rospy.init_node('flight')
+navigate = rospy.ServiceProxy('navigate', srv.Navigate)
+get_telemetry = rospy.ServiceProxy('get_telemetry', srv.GetTelemetry)
+land = rospy.ServiceProxy('land', Trigger)
+set_effect = rospy.ServiceProxy('set_effect', SetLEDEffect)
+set_position = rospy.ServiceProxy('set_position', srv.SetPosition)
+bridge = CvBridge()
 
-# Sphinx documentation
-docs/_build/
+tf_buffer = tf2_ros.Buffer()
+tf_listener = tf2_ros.TransformListener(tf_buffer)
 
-# PyBuilder
-target/
+arrowU=cv.imread("arrowU.png")
+arrowD=cv.imread("arrowD.png")
+arrowL=cv.imread("arrowL.png")
+arrowR=cv.imread("arrowR.png")
+arrowU=cv.resize(arrowU, (300,300))
+arrowD=cv.resize(arrowD, (600,300))
+arrowL=cv.resize(arrowL, (300,300))
+arrowR=cv.resize(arrowR, (300,300))
+arrowsIndex = [0,0,0,0]
+coordinates = []
+global flag_readable
+flag_readable = False
+# Reading QR codes
+'''def image_callback():
+    data = rospy.wait_for_message('main_camera/image_raw', Image)
+    cv_image = bridge.imgmsg_to_cv2(data, 'bgr8')
+    cv_image = cv.resize(cv_image, (300, 300))
+    #qr_debug.publish(bridge.cv2_to_imgmsg(cv_image, 'bgr8'))
+    #cv_image = cv_image[80:160, 100:220]
+    barcodes = pyzbar.decode(cv_image)
+    # Checking the QR code readout
+    if len(barcodes) == 0:
+        flag_readable = False
+        return flag_readable
+    else:
+        flag_readable = True
+    # Getting the coordinates of the following QR code
+    
+    for barcode in barcodes:
+        global coordinates
+        (x, y, w, h) = barcodes[0].rect
+        cv.rectangle(cv_image, (x, y), (x + w, y + h), (255, 105, 180), 3)
+        qr_debug.publish(bridge.cv2_to_imgmsg(cv_image, 'bgr8'))
+        coordinates = barcode.data.encode("utf-8")
+    return flag_readable
 
-# Jupyter Notebook
-.ipynb_checkpoints
 
-# IPython
-profile_default/
-ipython_config.py
+# Checking readability
+def check_readability(z):
+    flag_result = False
+    for i in range(10):
+        navigate_wait(x=qr_x, y=qr_y, z=z, speed=0.5, frame_id='aruco_map')
+        rospy.sleep(3)
+        for k in range(5):
+            flag_readable = image_callback()
+            rospy.sleep(0.3)
+            if flag_readable == True:
+                flag_result = True
+                break
+        if flag_readable == True:
+            print('Text:')
+            break
+        z -=0.2
+        if z<=0:
+            flag_result = False
+            return flag_result
+    return flag_result
+'''
+# Reading QR codes
+def image_callback():
+    data = rospy.wait_for_message('main_camera/image_raw', Image)
+    cv_image = bridge.imgmsg_to_cv2(data, 'bgr8')
+    #cv_image = cv_image[80:160, 100:220]
+    #cv_image1=cv.resize(cv_image, (800,800))
+    
+    barcodes = pyzbar.decode(cv_image)
+    # Checking the QR code readout
+    if len(barcodes) == 0:
+        flag_readable = False
+        #print('Try to check QR . . .')
+    else:
+        flag_readable = True
+    # Getting the coordinates of the following QR code
+    for barcode in barcodes:
+        global coordinates
+        coordinates = barcode.data.encode("utf-8")
+        
+        (x, y, w, h) = barcodes[0].rect
+        cv.rectangle(cv_image, (x, y), (x + w, y + h), (255, 105, 180), 3)
+        detect.publish(bridge.cv2_to_imgmsg(cv_image, 'bgr8'))
+    return flag_readable
 
-# pyenv
-.python-version
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+# Checking readability
+def check_readability(xc, yc, height):
+    # navigate_wait(x=xc, y=yc, z=heights[0], speed=1, frame_id='aruco_map')
+    # rospy.sleep(5)
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow
-__pypackages__/
+    flag_result = False
+    for i in range(9):
+        navigate_wait(x=xc, y=yc, z=height, speed=1, frame_id='aruco_map')
+        rospy.sleep(3)
+        for _ in range(8):
+            flag_readable = image_callback()
+            rospy.sleep(1)
+            if flag_readable == True:
+                flag_result = True
+                return flag_result
+                break
+        if flag_readable == True:
+            break
+        height-=0.1
+    return flag_result
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
 
-# SageMath parsed files
-*.sage.py
+def check():
+    data = rospy.wait_for_message('main_camera/image_raw', Image)
+    cv_image = bridge.imgmsg_to_cv2(data, 'bgr8')
+    cv_image = cv.resize(cv_image, (600,600))
+    temp = cv_image
+    temp=cv.resize(temp, (200,200))
+    for i in range(200, 400):
+        for j in range(200, 400):
+            temp[i-200][j-200]=cv_image[i][j]
+    cv_image=cv.resize(cv_image, (200,200))
+    cv_image=temp
+    hsv_min = np.array((0, 0, 0), np.uint8)
+    hsv_max = np.array((120, 120, 120), np.uint8)
+    hsv = cv.cvtColor(cv_image, cv.COLOR_BGR2HSV)
+    mask=cv.inRange(hsv, hsv_min, hsv_max)
+    mask=cv.erode(mask, None, iterations=2)
+    mask=cv.dilate(mask, None, iterations=4)
+    contours = cv.findContours(mask, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+    contours=contours[1]
+    if contours:
+        contours = sorted(contours, key=cv.contourArea, reverse=True)
+        cv.drawContours(cv_image, contours, 0, (255, 0, 255), 1)
+        (x,y,w,h)=cv.boundingRect(contours[0])
+        cv.rectangle(cv_image, (x,y), (x+w, y+h), (0,255,0), 1)
+        cv_image=cv_image[y:y+h, x:x+w]
+        cv_image=cv.resize(cv_image, (300,300))
+        detect.publish(bridge.cv2_to_imgmsg(cv_image, 'bgr8'))
+        arrowUc=0
+        arrowDc=0
+        arrowLc=0
+        arrowRc=0
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+        for i in range(300):
+            for j in range(300):
+                if all(cv_image[i][j])==all(arrowU[i][j]):
+                    arrowUc+=1
+                if all(cv_image[i][j])==all(arrowD[i][j]):
+                    arrowDc+=1
+                if all(cv_image[i][j])==all(arrowR[i][j]):
+                    arrowRc+=1
+                if all(cv_image[i][j])==all(arrowL[i][j]):
+                    arrowLc+=1
+        arrows = [arrowUc, arrowDc, arrowRc, arrowLc]
+        #print(arrowUc, ' ^ ', arrowDc, ' ^ ', arrowRc, ' ^ ', arrowLc) 
+        arrowsIndex[arrows.index(max(arrows))]+=1
+        #print(arrows.index(max(arrows)))'''
 
-# Spyder project settings
-.spyderproject
-.spyproject
+#def clv_check(cv_image):
+'''
+def draw_contours(cv_image):
+    cv_image = cv.resize(cv_image, (600,600))
+    #yellow
+    hsv_min = np.array((83, 66, 131), np.uint8)
+    hsv_max = np.array((62, 167, 133), np.uint8)
+    hsv = cv.cvtColor(cv_image, cv.COLOR_BGR2HSV)
+    mask=cv.inRange(hsv, hsv_min, hsv_max)
+    mask=cv.erode(mask, None, iterations=2)
+    mask=cv.dilate(mask, None, iterations=4)
+    contours = cv.findContours(mask, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
+    contours=contours[1]
+    cv.drawContours(cv_image, contours, 0, (255, 0, 255), 1)
+    #cv_image=cv.resize(cv_image, (300,300))
+    detect.publish(bridge.cv2_to_imgmsg(cv_image, 'bgr8'))
+    '''
+'''
+def image_callback_cm(data):
+    cv_image = bridge.imgmsg_to_cv2(data, 'bgr8')
+    check(cv_image)
+    draw_contours(cv_image)
+'''
 
-# Rope project settings
-.ropeproject
+def navigate_wait(x=0, y=0, z=0, yaw=float('nan'), speed=0.5, frame_id='', auto_arm=False, tolerance=0.2):
+    if frame_id == 'aruco_map':
+        navigate(x=x, y=y, z=z, speed=speed, yaw = 1.5708, yaw_rate = 0, frame_id=frame_id, auto_arm=auto_arm)
+    else:
+        navigate(x=x, y=y, z=z, speed=speed, yaw = 0, yaw_rate = 0, frame_id=frame_id, auto_arm=auto_arm)
+    while not rospy.is_shutdown():
+        telem = get_telemetry(frame_id='navigate_target')
+        if math.sqrt(telem.x ** 2 + telem.y ** 2 + telem.z ** 2) < tolerance:
+            break
+        rospy.sleep(0.2)
 
-# mkdocs documentation
-/site
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
 
-# Pyre type checker
-.pyre/
+X,Y = 0,0 #coordinates strelki
+print('Start writing')
+f = open('1.txt', 'w')
+
+detect = rospy.Publisher('/Detect', Image, queue_size=10)
+
+
+print('Activating . . . ') 
+navigate_wait(x=0, y=0, z=1, speed=0.5, frame_id='body', auto_arm=True)
+
+z = 1.1
+qr_x = 0.4
+qr_y = 0.8
+print('Writing clever telemetry')
+navigate_wait(x=qr_x, y=qr_y, z=z, speed=0.5, frame_id='aruco_map')
+rospy.sleep(5)
+print("Reading QR . . .")
+flag = check_readability(qr_x,qr_y,z)
+ar_coord = []
+cou = 0
+if flag:
+    print(coordinates)
+    for i in range(len(coordinates)-1):
+        if cou==1:
+            if coordinates[i] == ' ':
+                X = float(coordinates[i-3])+float(coordinates[i-1])/10
+                ar_coord.append(X)
+            elif coordinates[i] == '\n':
+                cou+=1
+                Y = float(coordinates[i-3])+float(coordinates[i-1])/10
+                ar_coord.append(Y)
+        else:
+            if coordinates[i] == ' ':
+                ar_coord.append(float(coordinates[i-3])+float(coordinates[i-1])/10)
+            elif coordinates[i] == '\n':
+                cou+=1
+                b = float(coordinates[i-3])+float(coordinates[i-1])/10
+                ar_coord.append(b)
+    ar_coord.append(coordinates[len(coordinates)-1])
+    #coordinates = list(coordinates.split(' '))
+    print('Column area ', 'x =', ar_coord[0],'y',ar_coord[1] )
+    print('Navigate area', 'x=', X, 'y=', Y)
+    print('Order:', ar_coord[6])
+    if X != 0 and Y != 0:
+        print(X, 'OK', Y)
+else:
+    print("ERROR: Cannot read QR :(")
+    land()
+#DONT ZABIT
+z=1.5
+navigate_wait(x=float(X), y=float(Y),z=z,speed=0.5,frame_id='aruco_map')
+navigate_wait(x=float(X), y=float(Y),z=0.75,speed=0.5,frame_id='aruco_map')
+rospy.sleep(10)
+
+arrowsIndex = [0,0,0,0]
+for i in range(20):
+    check()
+    print('Arrow data . . . ', i, "/20")
+
+rospy.sleep(2)
+
+print(arrowsIndex[0], ' ^ ', arrowsIndex[1], ' ^ ', arrowsIndex[2], ' ^ ', arrowsIndex[3]) 
+a = arrowsIndex.index(max(arrowsIndex))
+print("MAXINDEX: ", a)
+print('red')
+#set_effect(effect='blink', r = 255, g = 0, b=0)
+shir=2.5
+dlina=3.4
+
+if a == 0:
+    print("Sector A required")
+    navigate_wait(x=0,y=0,z=1,speed=0.5,frame_id='body')
+    telem = get_telemetry('aruco_map')
+    navigate(x=telem.x,y=shir,z=1.5,speed=0.1,frame_id='aruco_map')
+elif a == 1:
+    print("Sector B required")
+    navigate_wait(x=0,y=0,z=1,speed=0.5,frame_id='body')
+    telem = get_telemetry('aruco_map')
+    navigate(x=telem.x,y=0,z=1.5,speed=0.1,frame_id='aruco_map')
+elif a == 2:
+    print("Sector C required")
+    navigate_wait(x=0,y=0,z=1,speed=0.5,frame_id='body')
+    telem = get_telemetry('aruco_map')
+    navigate(x=dlina,y=telem.y,z=1.5,speed=0.1,frame_id='aruco_map')
+elif a == 3:
+    print("Sector D required")
+    navigate_wait(x=0,y=0,z=1,speed=0.5,frame_id='body')
+    telem = get_telemetry('aruco_map')
+    navigate(x=0,y=telem.y,z=1.5,speed=0.1,frame_id='aruco_map')
+cap = True
+telem = get_telemetry('aruco_map')
+def_dalno=telem.z
+tumb_high = 0.15
+while cap:
+    data = rospy.wait_for_message('rangefinder/range', Range)
+    dalno = float (data.range)
+    print(dalno)
+    if abs(dalno-def_dalno)>tumb_high:
+        telem = get_telemetry('aruco_map')
+        i=0
+        high_c=int((telem.z-tumb_high)/0.1)
+        while i<high_c:
+            set_position(x=0, y=0, z=-0.1, frame_id='body')
+            i+=1
+            rospy.sleep(0.4)
+        land()
+        if a==0:
+            print("Delivered in Sector A")
+        elif a==1:
+            print("Delivered in Sector B")
+        elif a==2:
+            print("Delivered in Sector C")
+        elif a==3:
+            print("Delivered in Sector D")
+        rospy.sleep(5)
+        cap = False
+high = 1.5
+telem = get_telemetry('aruco_map')
+i = telem.z
+while i<high_c:
+    set_position(x=0, y=0, z=0.1, frame_id='body')
+    i+=0.15
+    rospy.sleep(0.4)
+rospy.sleep(2)
+navigate_wait(x=0,y=0,z=1.5,speed=0.5,frame_id='aruco_map')
+rospy.sleep(2)
+navigate_wait(x=0,y=0,z=0.5,speed=0.5,frame_id='aruco_map')
+rospy.sleep(2)
+land()
+print("LAND")
